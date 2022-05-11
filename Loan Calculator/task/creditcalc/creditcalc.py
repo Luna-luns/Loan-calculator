@@ -1,45 +1,5 @@
 import math
-
-
-def ask_loan() -> int:
-    print('Enter the loan principal:')
-    return int(input())
-
-
-def ask_monthly_payment() -> int:
-    print('Enter the monthly payment:')
-    return int(input())
-
-
-def ask_number_of_periods() -> int:
-    print('Enter the number of periods:')
-    return int(input())
-
-
-def ask_loan_interest() -> float:
-    print('Enter the loan interest:')
-    return float(input()) / (12 * 100)
-
-
-def ask_annuity_payment() -> float:
-    print('Enter the annuity payment:')
-    return float(input())
-
-
-def define_what_calculate() -> str:
-    print('''What do you want to calculate?
-type "n" for number of monthly payments,
-type "a" for annuity monthly payment amount,
-type "p" for loan principal:''')
-    return input()
-
-
-def choose_parameter(_type: str) -> list:
-    if _type == 'p':
-        return [ask_annuity_payment(), ask_number_of_periods(), ask_loan_interest()]
-    if _type == 'a':
-        return [ask_loan(), ask_number_of_periods(), ask_loan_interest()]
-    return [ask_loan(), ask_monthly_payment(), ask_loan_interest()]
+import argparse
 
 
 def count_number_of_payments(annuity_payment: float, rate: float, loan_principal: int) -> int:
@@ -54,30 +14,87 @@ def count_ordinary_annuity(loan_principal: int, rate: float, months: int) -> flo
     return loan_principal * rate * (1 + rate) ** months / ((1 + rate) ** months - 1)
 
 
-def print_result(char: str) -> str:
-    if char == 'a':
-        _monthly_payment = math.ceil(count_ordinary_annuity(parameter_to_calculate[0], parameter_to_calculate[2], parameter_to_calculate[1]))
-        return f'Your monthly payment = {_monthly_payment}!'
-    if char == 'p':
-        _loan_principal = round(count_loan_principal(parameter_to_calculate[0], parameter_to_calculate[2], parameter_to_calculate[1]))
-        return f'Your loan principal = {_loan_principal}!'
-    else:
-        number_of_monthly_payments = count_number_of_payments(parameter_to_calculate[1], parameter_to_calculate[2], parameter_to_calculate[0])
+def count_differentiate_payment(loan_principal: int, rate: float, month: int) -> str:
+    interest_amount = 0
+    result = ''
+    for current_month in range(1, month + 1):
+        payment = math.ceil(loan_principal / month + rate * (loan_principal - (loan_principal * (current_month - 1)) / month))
+        interest_amount += payment
+        result += f'Month {current_month}: payment is {payment}\n'
+
+    overpayment = int(interest_amount - loan_principal)
+    result = f'{result}\nOverpayment = {overpayment}'
+
+    return result
+
+
+def print_result(args) -> str:
+    payment = float(args.payment) if args.payment is not None else None
+    interest = float(args.interest) / 100 / 12 if args.interest is not None else None
+    periods = int(args.periods) if args.periods is not None else None
+    principal = int(args.principal) if args.principal is not None else None
+    if args.type == 'annuity' and payment is None:
+        _monthly_payment = math.ceil(count_ordinary_annuity(principal, interest, periods))
+        overpayment = int((_monthly_payment * periods) - principal)
+        return f'Your annuity payment = {_monthly_payment}!\nOverpayment = {overpayment}'
+    if args.type == 'annuity' and principal is None:
+        _loan_principal = round(count_loan_principal(payment, interest, periods))
+        overpayment = int(payment * periods - _loan_principal)
+        return f'Your loan principal = {_loan_principal}!\nOverpayment = {overpayment}'
+    if args.type == 'annuity' and periods is None:
+        number_of_monthly_payments = count_number_of_payments(payment, interest, principal)
         year = math.floor(number_of_monthly_payments / 12)
         month = number_of_monthly_payments % 12
         if number_of_monthly_payments == 1:
-            return 'It will take 1 month to repay this loan!'
+            overpayment = int(number_of_monthly_payments * payment - principal)
+            return f'It will take 1 month to repay this loan!\nOverpayment = {overpayment}'
         if 1 < number_of_monthly_payments < 12:
-            return f'It will take {number_of_monthly_payments} months to repay this loan!'
+            overpayment = int(number_of_monthly_payments * payment - principal)
+            return f'It will take {number_of_monthly_payments} months to repay this loan!\nOverpayment = {overpayment}'
         if number_of_monthly_payments == 12:
-            return 'It will take 1 year to repay this loan!'
+            overpayment = int(number_of_monthly_payments * payment - principal)
+            return f'It will take 1 year to repay this loan!\nOverpayment = {overpayment}'
         if number_of_monthly_payments >= 13:
             if month == 1:
-                return f'It will take {year} years and {month} month to repay this loan!'
+                overpayment = int(number_of_monthly_payments * payment - principal)
+                return f'It will take {year} years and {month} month to repay this loan!\nOverpayment = {overpayment}'
             else:
-                return f'It will take {year} years and {month} months to repay this loan!'
+                overpayment = int(number_of_monthly_payments * payment - principal)
+                return f'It will take {year} years and {month} months to repay this loan!\nOverpayment = {overpayment}'
+    if args.type == 'diff' and payment is None:
+        return count_differentiate_payment(principal, interest, periods)
 
 
-type_char = define_what_calculate()
-parameter_to_calculate = choose_parameter(type_char)
-print(print_result(type_char))
+def check_errors(args) -> bool:
+    if args.type != 'annuity' and args.type != 'diff':
+        return False
+    if args.type == 'diff' and args.payment is not None:
+        return False
+    if args.interest is None:
+        return False
+    if args.type == 'diff':
+        if not (args.principal is not None and args.periods is not None and args.interest is not None):
+            return False
+    if args.type == 'annuity':
+        if not ((args.principal is not None and args.periods is not None and args.interest is not None) or
+                (args.principal is not None and args.payment is not None and args.interest is not None) or
+                (args.payment is not None and args.periods is not None and args.interest is not None)):
+            return False
+    return not (args.principal is not None and int(args.principal) < 0 or
+                args.periods is not None and int(args.periods) < 0 or
+                args.interest is not None and float(args.interest) < 0 or
+                args.payment is not None and int(args.payment) < 0)
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--type')
+parser.add_argument('--principal')
+parser.add_argument('--periods')
+parser.add_argument('--interest')
+parser.add_argument('--payment')
+args = parser.parse_args()
+is_valid_args = check_errors(args)
+if not is_valid_args:
+    print('Incorrect parameters')
+    exit()
+print(print_result(args))
